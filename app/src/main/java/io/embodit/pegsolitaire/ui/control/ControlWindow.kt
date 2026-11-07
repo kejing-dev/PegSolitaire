@@ -8,6 +8,7 @@ import android.util.Log
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -205,20 +206,19 @@ private fun StartStrip(state: PlayState, records: Map<Start, Record>, graph: Gra
             Start.entries.forEach { s ->
                 val selected = s == state.start
                 val rec = records[s] ?: Record()
-                Button(
-                    onClick = { graph.flow.chooseStart(s) },
-                    modifier = Modifier.weight(1f).fillMaxHeight().then(if (selected) Modifier.border(2.dp, PsColors.Primary, RoundedCornerShape(16.dp)) else Modifier),
-                    size = ButtonDefaults.Regular.copy(height = 104.dp, minWidth = 72.dp),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = if (selected) PsColors.PrimaryContainer else PicoTheme.colorScheme.fillSecondary, contentColor = PsColors.Ink),
+                // a whole tile is the touch target (104 dp tall); no Button padding so English names fit (OVERFLOW log, v0.1.0)
+                Column(
+                    Modifier.weight(1f).fillMaxHeight().clip(RoundedCornerShape(16.dp))
+                        .background(if (selected) PsColors.PrimaryContainer else PicoTheme.colorScheme.fillSecondary)
+                        .then(if (selected) Modifier.border(2.dp, PsColors.Primary, RoundedCornerShape(16.dp)) else Modifier)
+                        .clickable(role = androidx.compose.ui.semantics.Role.Button, onClickLabel = startName(s)) { graph.flow.chooseStart(s) }
+                        .padding(horizontal = 2.dp, vertical = 6.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.SpaceEvenly,
                 ) {
-                    // design-style: inherited-content-color Button
-                    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                        MiniBoard(s.pos, Modifier.size(42.dp))
-                        Txt(startName(s), "play/start-name", style = PicoTheme.typography.labelMedium, color = PsColors.Ink, align = TextAlign.Center)
-                        val r = when { rec.fullSolves > 0 -> stringResource(R.string.start_rec_solved); rec.bestLeft > 0 -> stringResource(R.string.start_rec_left, rec.bestLeft); else -> stringResource(R.string.start_rec_none) }
-                        Txt(r, "play/start-rec", style = PicoTheme.typography.bodySmall.copy(fontSize = 11.sp), color = PsColors.InkSecondary, align = TextAlign.Center)
-                    }
+                    MiniBoard(s.pos, Modifier.size(42.dp))
+                    Txt(startName(s), "play/start-name", style = PicoTheme.typography.labelMedium, color = PsColors.Ink, align = TextAlign.Center)
+                    val r = when { rec.fullSolves > 0 -> stringResource(R.string.start_rec_solved); rec.bestLeft > 0 -> stringResource(R.string.start_rec_left, rec.bestLeft); else -> stringResource(R.string.start_rec_none) }
+                    Txt(r, "play/start-rec", style = PicoTheme.typography.bodySmall.copy(fontSize = 11.sp), color = PsColors.InkSecondary, align = TextAlign.Center)
                 }
             }
         }

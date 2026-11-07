@@ -201,7 +201,7 @@ class GameFlow(
         refreshHint()
     }
 
-    /** A fresh game on [start] (S03); the tray balls fly back in 400 ms unless reduced motion or [animate] = false. */
+    /** A fresh game on [start] (S03; the hint starts off again, so a new game can count for the records); the tray balls fly back in 400 ms unless reduced motion or [animate] = false. */
     fun newGame(start: Start, animate: Boolean = true) {
         cancelJobs()
         lastSurePly = null
@@ -210,7 +210,7 @@ class GameFlow(
         val now = clock()
         val firstGame = !settings().firstRunDone || s.welcome
         set(PlayState(
-            phase = Phase.IDLE, start = start, positions = listOf(start.pos), resumedAt = now, hintOn = s.hintOn, welcome = s.welcome,
+            phase = Phase.IDLE, start = start, positions = listOf(start.pos), resumedAt = now, hintOn = false, welcome = s.welcome,
             coach = if (firstGame && settings().coach) 1 else 0, freezeMs = s.freezeMs, freezeAt = s.freezeAt,
             anim = if (animate && !reduced && s.phase != Phase.LOADING) Anim(AnimKind.RESET, null, before, now, RESET_MS) else null,
         ))

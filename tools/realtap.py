@@ -1,5 +1,5 @@
 """Real pointer actions on the control window (pico-cli interact, no debug shortcut for the action itself) for the
-ui_gates evidence: the new-game confirm, the settings first screen, a direction key, and quitting.
+ui_gates evidence: [重开] mid-game (newgame-confirm), a start-board tile mid-game, the settings first screen, quitting.
 
   DEV=emulator-5564 python3 tools/realtap.py OUTDIR
 
@@ -12,7 +12,7 @@ DEV = os.environ.get("DEV", "emulator-5564")
 ADB = os.path.expanduser("~/Library/Android/sdk/platform-tools/adb")
 PKG = "io.embodit.pegsolitaire"
 OUT = sys.argv[1]
-CROP = (680, 500, 2000, 2200)
+CROP = tuple(int(v) for v in os.environ.get("CROP", "0,0,99999,99999").split(","))
 log = open(os.path.join(OUT, "realtap.txt"), "a", encoding="utf-8")
 
 
@@ -47,25 +47,32 @@ def click(name_prefix):
 def shot(name):
     raw = os.path.join(OUT, "raw.png")
     subprocess.run(["pico-cli", "capture", "screenshot", "-d", DEV, "-o", raw, "--replace"], capture_output=True)
-    Image.open(raw).crop(CROP).save(os.path.join(OUT, name))
+    im = Image.open(raw); im.crop((CROP[0], CROP[1], min(CROP[2], im.width), min(CROP[3], im.height))).save(os.path.join(OUT, name))
     os.remove(raw)
     note("shot " + name)
 
 
-subprocess.run(["pico-cli", "camera", "reset", "-d", DEV], capture_output=True)
-subprocess.run(["pico-cli", "camera", "move", "-d", DEV, "--text", "turn right 24 degrees then move forward 0.9 meters"], capture_output=True)
-cmd("lang", "zh"); cmd("freeze", "off"); cmd("goto", "S03"); time.sleep(1.5)
-# a direction key with the real pointer: select C3-C5 (stage), then click the far-left key
-cmd("sel", "C3,C4,C5"); time.sleep(1.0)
-click("左远"); time.sleep(3.0)
-subprocess.run([ADB, "-s", DEV, "logcat", "-d", "-s", "PegSolitaire:V"], capture_output=True)
-# new game over a game in progress: TabBar [新局] then the real [开始]
-if not click("新局"):
-    cmd("page", "new")
-time.sleep(1.2)
-click("开始"); time.sleep(1.2)
+if not os.environ.get("KEEPCAM"):
+    subprocess.run(["pico-cli", "camera", "reset", "-d", DEV], capture_output=True)
+if os.environ.get("CAM"):
+    subprocess.run(["pico-cli", "camera", "move", "-d", DEV, "--text", os.environ["CAM"]], capture_output=True)
+time.sleep(2)
+cmd("lang", "zh"); cmd("freeze", "off")
+# stage: a fresh board and 3 hops through the debug jump (same GameFlow path as pinches)
+cmd("new", "standard"); time.sleep(1.0)
+for f, t in (("d6", "d4"), ("f5", "d5"), ("c5", "e5")):
+    cmd("jump", f + " " + t); time.sleep(0.8)
+# restart over a game in progress: the real [重开] key on the game page
+if not click("对局"):
+    cmd("page", "play")
+time.sleep(1.0)
+click("重开"); time.sleep(1.2)
 shot("newgame-confirm.png")
-click("取消"); time.sleep(0.8)
+click("算了"); time.sleep(0.8)
+# another start board mid-game: the real 「钻石」 tile asks too
+click("钻石"); time.sleep(1.2)
+shot("change-start-confirm.png")
+click("算了"); time.sleep(0.8)
 # settings first screen
 if not click("设置"):
     cmd("page", "settings")

@@ -32,7 +32,7 @@ import kotlinx.coroutines.launch
  *   jump <from> <to> · script bergholt|stuck6|offcentre [ms between hops] · undo · undoto N · restart · again
  *   start <standard|diamond|plus|fireplace|pyramid|arrow> (chooseStart: asks first mid-game) · new <id> (no question)
  *   hint on|off · lang zh|en|system · tilt 0|30|45|60|90 · sound on|off · volume 0-2 · reduced on|off · coach on|off
- *   load <hex> · freeze MS|off · s00hold on|off · welcome · page play|rules|settings · history on|off
+ *   load <hex> · freeze MS|off · s00hold on|off · welcome · welcomedone · page play|rules|settings · history on|off
  *   confirm · no · exitask · clearask · reopen · closepanel · hover <hole> · dump|state · evidence
  */
 class DebugCommandReceiver : BroadcastReceiver() {
@@ -143,6 +143,29 @@ class DebugCommandReceiver : BroadcastReceiver() {
             "freeze" -> flow.freeze(a.toLongOrNull())
             "s00hold" -> context.getSharedPreferences("debug", Context.MODE_PRIVATE).edit().putBoolean("s00hold", on).apply()
             "welcome" -> { settings { it.copy(firstRunDone = false) }; fresh(); flow.debugState { it.copy(welcome = true, coach = 1) }; Ui.page = Page.RULES }
+            "welcomedone" -> flow.welcomeDone()
+            // soak N: N whole games of random legal hops on random start boards, through the same jump path (mustPass M5)
+            "soak" -> {
+                val n = a.toIntOrNull() ?: 50
+                graph.scope.launch {
+                    val r = kotlin.random.Random(20261106)
+                    var hops = 0
+                    for (g in 1..n) {
+                        flow.freeze(null); flow.newGame(Start.entries[r.nextInt(Start.entries.size)], animate = false)
+                        while (true) {
+                            while (flow.state.value.phase == Phase.JUMPING) delay(20)
+                            val st = flow.state.value
+                            if (st.phase == Phase.RESULT) break
+                            val legal = Peg.legalJumps(st.pos)
+                            if (legal.isEmpty()) { delay(50); continue }
+                            val j = legal[r.nextInt(legal.size)]
+                            if (flow.jump(j.from, j.to)) hops++
+                        }
+                        Log.i(TAG, "SOAK game $g/$n start=${flow.state.value.start.id} result=${flow.state.value.result} left=${flow.state.value.left}")
+                    }
+                    Log.i(TAG, "SOAK done games=$n hops=$hops")
+                }
+            }
             "page" -> Ui.page = when (a) { "rules" -> Page.RULES; "settings" -> Page.SETTINGS; else -> Page.PLAY }
             "history" -> Ui.historyOpen = on
             "confirm" -> when { Ui.exitConfirm -> Log.i(TAG, "exit confirm: tap it for real"); Ui.clearConfirm -> { flow.clearRecords(); Ui.clearConfirm = false }; else -> flow.confirm() }

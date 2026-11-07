@@ -311,13 +311,13 @@ class Mesh:
         return tris
 
 
-def mat(name, color=None, rough=0.6, tex=None, metal=0.0, normal=None):
+def mat(name, color=None, rough=0.6, tex=None, metal=0.0, normal=None, double=False):
     pbr = {"metallicFactor": metal, "roughnessFactor": rough}
     if tex is not None:
         pbr["baseColorTexture"] = {"index": tex}
     if color is not None:
         pbr["baseColorFactor"] = [srgb_lin(c) for c in color] + [1.0]
-    m = {"name": name, "pbrMetallicRoughness": pbr, "alphaMode": "OPAQUE", "doubleSided": False}
+    m = {"name": name, "pbrMetallicRoughness": pbr, "alphaMode": "OPAQUE", "doubleSided": double}
     if normal is not None:
         m["normalTexture"] = {"index": normal, "scale": 1.0}
     return m
@@ -348,7 +348,7 @@ def lathe(m, mi, profile, seg=96, v_scale=1.0):
         a = profile[max(k - 1, 0)]; b = profile[min(k + 1, n - 1)]
         dr, dy = b[0] - a[0], b[1] - a[1]
         l = math.hypot(dr, dy) or 1
-        pn.append((dy / l, -dr / l))
+        pn.append((-dy / l, dr / l))
     for i in range(seg + 1):
         a = 2 * math.pi * i / seg
         ca, sa = math.cos(a), math.sin(a)
@@ -388,7 +388,7 @@ def build_board():
     side = band_texture(2048, 64, lambda i, j: i * 0.09 + fbm(i * 0.02, j * 0.08, 2) * 6 + j * 0.05, 0.75)
     tris = m.write("board", [
         mat("BoardTop", tex=0, rough=0.22, normal=1),
-        mat("BoardSide", tex=2, rough=0.3),
+        mat("BoardSide", tex=2, rough=0.3, double=True),
         mat("BoardBottom", color=(0x1A, 0x2A, 0x1C), rough=0.8),
         mat("Gilt", color=GILT, rough=0.28, metal=1.0),
     ], [top, nrm, side], jpeg=(0, 2))
@@ -403,7 +403,7 @@ def build_tray():
     lathe(m, 0, prof, seg=96)
     torus(m, 1, r - 0.003, 0.0022, TRAY_H + 0.0002, seg=96, sides=10)
     tex = band_texture(1024, 256, lambda i, j: j * 0.32 + fbm(i * 0.012, j * 0.02, 6) * 7, 0.85)
-    m.write("tray", [mat("TrayMalachite", tex=0, rough=0.25), mat("Gilt", color=GILT, rough=0.28, metal=1.0)], [tex], jpeg=(0,))
+    m.write("tray", [mat("TrayMalachite", tex=0, rough=0.25, double=True), mat("Gilt", color=GILT, rough=0.28, metal=1.0)], [tex], jpeg=(0,))
 
 
 def build_ball(k):

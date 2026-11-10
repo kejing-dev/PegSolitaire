@@ -169,4 +169,29 @@ class FlowTest {
         assertFalse(f.state.value.jumps.isNotEmpty())
         f.undo(); assertEquals(AlertKind.NOTHING_TO_UNDO, f.state.value.alert?.kind)
     }
+
+    /**
+     * QA q2-1: a saved IMPOSSIBLE board with the hint on, restored and brought back to the foreground while the look-back
+     * was cancelled (verdict shown, spinner running, no key): the look-back starts again and the undo-n key appears.
+     */
+    @Test fun restoredImpossibleBoardGetsItsUndoKeyAfterForeground() = runTest {
+        val store = MemStore()
+        val jumps = SaveCodec.replay(Start.STANDARD.pos, SolverTest.QA8.split(",").map { t -> t.split("-").let { h(it[0]) to h(it[1]) } })!!
+        store.saved = SavedGame(Start.STANDARD, jumps, hintOn = true, usedHint = true)
+        val f = flow(store)
+        f.start(); runCurrent()
+        assertTrue(f.state.value.restored)
+        assertEquals(Solver.Kind.IMPOSSIBLE, f.state.value.hint?.kind)
+        // what QA saw: going to the background cancelled the look-back after the verdict was out
+        f.onBackground()
+        f.debugState { it.copy(hint = it.hint?.copy(backN = null, backRunning = true)) }
+        val t0 = System.nanoTime()
+        f.onForeground()
+        repeat(20) { runCurrent(); advanceTimeBy(10) }
+        val ms = (System.nanoTime() - t0) / 1_000_000
+        println("BENCH restored-impossible undo key after foreground: ${ms} ms back=${f.state.value.hint?.backN}")
+        assertEquals(1, f.state.value.hint?.backN)
+        assertFalse(f.state.value.hint!!.backRunning)
+        assertTrue("$ms ms", ms <= 2500)
+    }
 }

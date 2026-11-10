@@ -478,7 +478,13 @@ class GameFlow(
         hintJob?.cancel()
         if (!st.hintOn || st.phase !in setOf(Phase.IDLE, Phase.SELECTED)) return
         val ply = st.jumps.size
-        if (st.hint != null && st.hint.ply == ply && !st.hint.running) return
+        val have = st.hint?.takeIf { it.ply == ply && !it.running }
+        if (have != null) {
+            // QA q2-1: a cancelled look-back (going to the background, a page switch) must start again, or the undo-n key
+            // never appears; every other finished answer for this ply stays as it is
+            if (have.kind == Solver.Kind.IMPOSSIBLE && have.backN == null) startLookBack(st.pos, st.positions, ply, have.since)
+            return
+        }
         if (!st.usedHint) set(s.copy(usedHint = true))
         val pos = st.pos
         val positions = st.positions
@@ -496,12 +502,22 @@ class GameFlow(
             val looking = answer.kind == Solver.Kind.IMPOSSIBLE
             set(s.copy(hint = Hint(answer.kind, answer.jump, ply, null, t0, clock() - t0, backRunning = looking)))
             log("SOLVE ${answer.kind} ${answer.jump?.text()} nodes=${answer.nodes} ms=${answer.ms} failed=${answer.failed} shownAfter=${clock() - t0}")
-            if (!looking) return@launch
-            val proven = HashMap<Long, Boolean>().apply { verdicts.forEach { (k, v) -> put(k, v.kind == Solver.Kind.SURE) } }
+            if (looking) startLookBack(pos, positions, ply, t0)
+        }
+    }
+
+    /** The undo-n look-back for an IMPOSSIBLE board (its own job: it is restarted whenever it was cancelled, QA q2-1). */
+    private fun startLookBack(pos: Long, positions: List<Long>, ply: Int, t0: Long) {
+        hintJob?.cancel()
+        if (s.hint?.backRunning != true) set(s.copy(hint = s.hint?.copy(backRunning = true)))
+        log("SOLVE look-back start ply=$ply")
+        val proven = HashMap<Long, Boolean>().apply { verdicts.forEach { (k, v) -> put(k, v.kind == Solver.Kind.SURE) } }
+        hintJob = scope.launch {
+            val job = coroutineContext[Job]
             val back = withContext(solverDispatcher) {
                 nearestSolvable(positions, cancelled = { job?.isActive != true }) { p -> proven[p] }
             }
-            if (s.pos != pos || !s.hintOn) return@launch
+            if (s.pos != pos || !s.hintOn || s.hint?.ply != ply) return@launch
             back?.let { remember(positions[positions.size - 1 - it], Solver.Answer(Solver.Kind.SURE, null, emptyList(), 0, 0, 0)) }
             set(s.copy(hint = s.hint?.copy(backN = back, backRunning = false)))
             log("SOLVE back=$back after ${clock() - t0} ms")

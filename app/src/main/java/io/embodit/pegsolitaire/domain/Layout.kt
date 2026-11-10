@@ -84,10 +84,11 @@ object Layout {
     const val MARKER_T = 0.0010f
     /**
      * Lit landing targets float over their hole (template 「落点和提示标记浮在格上 1.2 cm，细光柱连到格心」) and carry their
-     * own collider there, so the ball in front never covers them: 4 cm on the flat board (seen almost edge-on from the
-     * emulator's reset eye), 1.2 cm from 30° on (LayoutTest: every target visible from every eye at every stop).
+     * own collider there, so the ball in front never covers them: 2.2 cm on the flat board (seen almost edge-on from the
+     * emulator's reset eye; 2.0 cm is the lowest that clears every eye, v0.1.1 came down from 4 cm so the ring no longer
+     * reads as circling the selected ball, QA K5), 1.2 cm from 30° on (LayoutTest: every target visible from every eye).
      */
-    fun targetLift(tiltDeg: Int): Float = if (tiltDeg < 20) 0.040f else 0.012f
+    fun targetLift(tiltDeg: Int): Float = if (tiltDeg < 20) 0.022f else 0.012f
 
     /** Rings around a cup (selection / target / jumped / alert / landing glow): 4.44-5.04 cm. */
     const val RING_IN = 0.0222f

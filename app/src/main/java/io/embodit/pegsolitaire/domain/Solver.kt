@@ -22,14 +22,24 @@ class Solver(
 
     private class Budget : RuntimeException(null, null, false, false)
 
+    companion object {
+        /** Deterministic node budget per board when looking back for the nearest solvable one (no wall clock: QA q1-1). */
+        const val BACK_NODES = 2_000_000L
+    }
+
     /** Jump indices in search order: pegs furthest from the centre move first, then landing nearest it, ties by index (deterministic; JVM bench in RulesTest / AGENTS.md). */
     private val ORDER: IntArray = Peg.JUMPS.indices.sortedWith(compareBy({ -dist(Peg.JUMPS[it].from) }, { dist(Peg.JUMPS[it].to) }, { it })).toIntArray()
 
     private fun dist(k: Int): Int = Math.abs(Peg.COL[k] - 3) + Math.abs(Peg.ROW[k] - 3)
 
-    fun solve(start: Long, target: Int = Peg.CENTER, cancelled: () -> Boolean = { false }): Answer {
+    /**
+     * [shared]: a failure table to reuse across solves of the same target (positions proven dead stay dead: only fully
+     * explored positions go in), e.g. the board before and the boards behind it when looking back for a solvable one.
+     */
+    fun solve(start: Long, target: Int = Peg.CENTER, cancelled: () -> Boolean = { false }, shared: LongOpenHashSet? = null): Answer {
         val t0 = clock()
-        val failed = LongOpenHashSet(maxFailed)
+        val failed = shared ?: LongOpenHashSet(maxFailed)
+        val failedAtStart = failed.size
         var nodes = 0L
         val line = ArrayList<Peg.Jump>()
         val symmetric = target == Peg.CENTER
@@ -68,7 +78,7 @@ class Solver(
             Kind.UNSURE -> ORDER.firstOrNull { Peg.legalAt(start, it) }?.let { Peg.JUMPS[it] }
             Kind.IMPOSSIBLE -> null
         }
-        return Answer(kind, first, if (kind == Kind.SURE) line.toList() else emptyList(), nodes, ms, failed.size)
+        return Answer(kind, first, if (kind == Kind.SURE) line.toList() else emptyList(), nodes, ms, failed.size - failedAtStart)
     }
 }
 
@@ -120,4 +130,30 @@ class LongOpenHashSet(val capacity: Int) {
             i = (i + 1) and mask
         }
     }
+}
+
+/**
+ * "悔 n 步回到还能全解" (design gameSpec.hint ③, QA q1-1): the smallest n such that the board n jumps back can still be
+ * fully solved. Nearest board first; each board gets a fixed node budget (no wall clock, so the answer is the same on
+ * every run and every device); dead boards proven on the way are shared through one failure table. [positions] runs from
+ * the start board to the current one. null = none proven within the budgets (the start boards themselves are solvable,
+ * so this only happens when budgets run out).
+ */
+fun nearestSolvable(
+    positions: List<Long>,
+    cancelled: () -> Boolean = { false },
+    nodesPerBoard: Long = Solver.BACK_NODES,
+    known: (Long) -> Boolean? = { null },
+): Int? {
+    val shared = LongOpenHashSet(1_000_000)
+    for (n in 1 until positions.size) {
+        if (cancelled()) return null
+        val p = positions[positions.size - 1 - n]
+        val k = known(p)
+        if (k == true) return n
+        if (k == false) continue
+        val a = Solver(maxNodes = nodesPerBoard, maxMs = Long.MAX_VALUE / 4).solve(p, cancelled = cancelled, shared = shared)
+        if (a.kind == Solver.Kind.SURE) return n
+    }
+    return null
 }

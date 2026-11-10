@@ -307,9 +307,12 @@ internal class BoardScene {
                 val to = restPos(p, id)
                 if ((from - to).len() < 1e-4f) continue
                 moving += id
-                val delay = (id % 8) * 25L
-                val t = ((e - delay).toFloat() / (anim.durMs - 175L)).coerceIn(0f, 1f)
-                setBall(id, Layout.arc(from, to, Layout.easeInOut(t), 0.05f), p.holeOf[id] >= 0)
+                // batches 25 ms apart plus a fixed per-ball jitter of 0-20 ms and a slightly different arc height, so no
+                // four balls leave on the same frame (QA K4; the design keeps the whole return within 400 ms)
+                val jitter = ((id * 37) % 21).toLong()
+                val delay = (id % 8) * 25L + jitter
+                val t = ((e - delay).toFloat() / (anim.durMs - 195L)).coerceIn(0f, 1f)
+                setBall(id, Layout.arc(from, to, Layout.easeInOut(t), 0.04f + 0.004f * ((id * 13) % 5)), p.holeOf[id] >= 0)
             }
         }
         if (anim == null || anim.kind != AnimKind.JUMP) { trails.forEach { it.enabled = false }; hopDots.forEach { it.enabled = false } }

@@ -168,7 +168,7 @@ private fun PlayPage(state: PlayState, settings: Settings, records: Map<Start, R
             }
         } else {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                SecondaryButton(stringResource(R.string.btn_undo), "play/undo", onClick = { flow.undo() }, icon = R.drawable.ic_undo, modifier = Modifier.weight(1f))
+                SecondaryButton(stringResource(R.string.btn_undo), "play/undo", onClick = { flow.undo() }, icon = R.drawable.ic_undo, modifier = Modifier.weight(1f), dim = state.jumps.isEmpty())
                 ToggleButton(stringResource(if (state.hintOn) R.string.hint_on else R.string.hint_off), "play/hint", on = state.hintOn, onClick = { flow.setHint(!state.hintOn) }, modifier = Modifier.weight(1f))
             }
         }
@@ -259,6 +259,8 @@ private fun HintCard(state: PlayState, graph: Graph) {
             hint.kind == Solver.Kind.UNSURE -> { Dot(Color(0xFF8C8C8C)); Txt(stringResource(R.string.hint_unsure), "play/hint-line", style = PicoTheme.typography.bodyMedium, color = PsColors.Ink, maxLines = 2, modifier = Modifier.weight(1f)) }
             else -> {
                 Txt(stringResource(R.string.hint_impossible), "play/hint-line", style = PicoTheme.typography.bodyMedium, color = PsColors.ErrorText, maxLines = 2, modifier = Modifier.weight(1f))
+                // q1-1: the verdict shows at once; the undo-n key appears when the look-back has finished (deterministic)
+                if (hint.backRunning) CircularProgressIndicator(modifier = Modifier.size(24.dp))
                 hint.backN?.let { n -> SecondaryButton(stringResource(R.string.hint_back, n), "play/hint-back", onClick = { graph.flow.undoTo(n) }) }
             }
         }
@@ -274,7 +276,7 @@ private fun ConfirmPage(question: String, line: String, yes: String, icon: Int, 
     PageColumn {
         Column(Modifier.fillMaxWidth().weight(1f).clip(RoundedCornerShape(28.dp)).background(PsColors.TagFace).padding(28.dp), verticalArrangement = Arrangement.SpaceEvenly) {
             Icon(painter = painterResource(icon), contentDescription = null, modifier = Modifier.size(64.dp), tint = PsColors.Ink)
-            Txt(question, "confirm/q", style = PicoTheme.typography.titleLarge.copy(fontSize = 30.sp), color = PsColors.Ink, maxLines = 3)
+            Txt(question, "confirm/q", style = PicoTheme.typography.titleLarge.copy(fontSize = 30.sp, lineHeight = 40.sp), color = PsColors.Ink, maxLines = 3)
             Txt(line, "confirm/line", style = PicoTheme.typography.bodyLarge, color = PsColors.InkSecondary, maxLines = 2)
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 SecondaryButton(stringResource(R.string.btn_cancel), "confirm/cancel", onClick = onNo, modifier = Modifier.weight(1f).height(72.dp))

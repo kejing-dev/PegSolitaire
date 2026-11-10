@@ -65,22 +65,24 @@ internal fun PrimaryButton(text: String, tag: String, onClick: () -> Unit, modif
 }
 
 @Composable
-internal fun SecondaryButton(text: String, tag: String, onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true, danger: Boolean = false, icon: Int? = null) {
+internal fun SecondaryButton(text: String, tag: String, onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true, danger: Boolean = false, icon: Int? = null, dim: Boolean = false) {
+    // dim: looks unavailable but still answers with the reason when tapped (design S03: 点灰的 [悔一步] -> 「还没跳」)
+    val fg = when { danger -> PsColors.OnError; dim -> PsColors.InkSecondary.copy(alpha = 0.75f); else -> PicoTheme.colorScheme.labelPrimary }
     Button(
         onClick = onClick, modifier = modifier, enabled = enabled,
         size = ButtonDefaults.Regular.copy(height = 52.dp, minWidth = 96.dp),
         shape = RoundedCornerShape(26.dp),
         colors = ButtonDefaults.buttonColors(
-            containerColor = if (danger) PsColors.Error else PicoTheme.colorScheme.fillSecondary,
-            contentColor = if (danger) PsColors.OnError else PicoTheme.colorScheme.labelPrimary,
+            containerColor = if (danger) PsColors.Error else if (dim) PicoTheme.colorScheme.fillSecondary.copy(alpha = 0.45f) else PicoTheme.colorScheme.fillSecondary,
+            contentColor = fg,
         ),
     ) {
         if (icon != null) {
-            com.pico.spatial.ui.design.Icon(painter = androidx.compose.ui.res.painterResource(icon), contentDescription = null, modifier = Modifier.size(20.dp), tint = if (danger) PsColors.OnError else PicoTheme.colorScheme.labelPrimary)
+            com.pico.spatial.ui.design.Icon(painter = androidx.compose.ui.res.painterResource(icon), contentDescription = null, modifier = Modifier.size(20.dp), tint = fg)
             Box(Modifier.width(6.dp))
         }
         // design-style: inherited-content-color Button
-        Txt(text, "$tag/button", style = PicoTheme.typography.labelLarge, color = if (danger) PsColors.OnError else PicoTheme.colorScheme.labelPrimary)
+        Txt(text, "$tag/button", style = PicoTheme.typography.labelLarge, color = fg)
     }
 }
 

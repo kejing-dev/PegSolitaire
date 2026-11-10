@@ -32,9 +32,10 @@ class FlowTest {
 
     private var settings = Settings(firstRunDone = true, coach = false)
     private val sounds = ArrayList<Sound>()
+    private val logs = ArrayList<String>()
 
     private fun TestScope.flow(store: MemStore = MemStore(), records: MemRecords = MemRecords()) = GameFlow(
-        backgroundScope, StandardTestDispatcher(testScheduler), { testScheduler.currentTime }, store, records, { settings }, { settings = it }, { sounds += it },
+        backgroundScope, StandardTestDispatcher(testScheduler), { testScheduler.currentTime }, store, records, { settings }, { settings = it }, { sounds += it }, log = { logs += it },
     )
 
     private fun h(n: String) = Peg.parse(n)!!
@@ -146,5 +147,26 @@ class FlowTest {
         f.tapHole(h("a4")); assertEquals(AlertKind.WELCOME_PICK, f.state.value.alert?.kind); assertTrue(f.state.value.welcome)
         f.tapHole(h("d6")); assertFalse(f.state.value.welcome); assertTrue(settings.firstRunDone); assertEquals(2, f.state.value.coach)
         f.tapHole(h("d4")); assertEquals(3, f.state.value.coach)
+    }
+
+    /** q1-1 in the flow: hint switched on mid-game on QA's 8-hop board -> IMPOSSIBLE shown first, then the undo-1 key. */
+    @Test fun hintOnMidGameShowsImpossibleThenTheNearestUndo() = runTest {
+        val f = flow(); f.start(); runCurrent()
+        playAll(f, SolverTest.QA8.split(",").map { t -> t.split("-").let { h(it[0]) to h(it[1]) } })
+        f.setHint(true)
+        repeat(40) { runCurrent(); advanceTimeBy(10) }
+        // the verdict is published (state set + logged) before the look-back starts; the key comes with the second update
+        val verdict = logs.indexOfFirst { it.startsWith("SOLVE IMPOSSIBLE") }
+        val back = logs.indexOfFirst { it.startsWith("SOLVE back=") }
+        assertTrue("IMPOSSIBLE ($verdict) before the look-back ($back): $logs", verdict in 0 until back)
+        assertEquals(1, f.state.value.hint?.backN)
+        f.undoTo(1); advanceTimeBy(500); runCurrent()
+        assertEquals(7, f.state.value.jumps.size)
+    }
+
+    @Test fun undoIsDimButAnswersAtZeroJumps() = runTest {
+        val f = flow(); f.start(); runCurrent()
+        assertFalse(f.state.value.jumps.isNotEmpty())
+        f.undo(); assertEquals(AlertKind.NOTHING_TO_UNDO, f.state.value.alert?.kind)
     }
 }

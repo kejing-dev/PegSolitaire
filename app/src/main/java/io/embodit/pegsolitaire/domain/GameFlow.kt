@@ -35,7 +35,7 @@ data class Anim(val kind: AnimKind, val jump: Peg.Jump?, val before: Placement, 
 enum class ConfirmKind { RESTART, CHANGE_START }
 
 /** The hint (design gameSpec.hint): three answers + RUNNING; [backN] = undo this many jumps to reach a solvable board. */
-data class Hint(val kind: Solver.Kind?, val jump: Peg.Jump?, val ply: Int, val backN: Int? = null, val since: Long = 0, val ms: Long = 0) {
+data class Hint(val kind: Solver.Kind?, val jump: Peg.Jump?, val ply: Int, val backN: Int? = null, val since: Long = 0, val ms: Long = 0, val backRunning: Boolean = false) {
     val running: Boolean get() = kind == null
 }
 
@@ -75,7 +75,8 @@ data class PlayState(
     val pos: Long get() = positions.last()
     val left: Int get() = Peg.count(pos)
     val moves: Int get() = Peg.moves(jumps)
-    val placement: Placement get() = Placement.of(start.pos, jumps)
+    /** Balls by hole, from the board the game began on (a debug `load` board too, QA K6). */
+    val placement: Placement get() = Placement.of(positions.first(), jumps)
     val inGame: Boolean get() = phase in setOf(Phase.IDLE, Phase.SELECTED, Phase.JUMPING)
     val canUndo: Boolean get() = jumps.isNotEmpty() && phase in setOf(Phase.IDLE, Phase.SELECTED, Phase.RESULT)
     val hasProgress: Boolean get() = jumps.isNotEmpty() && phase != Phase.RESULT
@@ -134,8 +135,6 @@ class GameFlow(
         const val FLASH_MS = 300L
         /** "在算…" only shows when the solver takes longer than this (design S06). */
         const val SOLVING_VISIBLE_MS = 200L
-        /** Budget per board when looking back for the last solvable board ("悔 n 步回到还能全解"). */
-        const val BACK_BUDGET_MS = 500L
         const val RESULT_SOUND_DELAY_MS = 220L
     }
 
@@ -149,8 +148,6 @@ class GameFlow(
     private var animJob: Job? = null
     private var alertJob: Job? = null
     private var hintJob: Job? = null
-    /** The last ply at which the solver said SURE (design hint ③: "记住最后一次有把握的跳数"). */
-    private var lastSurePly: Int? = null
     private var countedPlayed = false
     private var countedSolve = false
 
@@ -188,7 +185,6 @@ class GameFlow(
 
     private fun restore(saved: SavedGame) {
         cancelJobs()
-        lastSurePly = null
         val positions = positionsOf(saved.start.pos, saved.jumps)
         val res = Peg.result(positions.last())
         countedPlayed = res != null; countedSolve = res == Peg.Result.FULL
@@ -204,7 +200,6 @@ class GameFlow(
     /** A fresh game on [start] (S03; the hint starts off again, so a new game can count for the records); the tray balls fly back in 400 ms unless reduced motion or [animate] = false. */
     fun newGame(start: Start, animate: Boolean = true) {
         cancelJobs()
-        lastSurePly = null
         countedPlayed = false; countedSolve = false
         val before = s.placement
         val now = clock()
@@ -492,29 +487,36 @@ class GameFlow(
         log("SOLVE start ply=$ply S06")
         hintJob = scope.launch {
             val job = coroutineContext[Job]
-            val answer = withContext(solverDispatcher) { solverFactory().solve(pos) { job?.isActive != true } }
+            val answer = verdicts[pos]?.takeIf { it.kind == Solver.Kind.IMPOSSIBLE || it.jump != null }
+                ?: withContext(solverDispatcher) { solverFactory().solve(pos, cancelled = { job?.isActive != true }) }
             if (s.pos != pos || !s.hintOn) return@launch
-            if (answer.kind == Solver.Kind.SURE) lastSurePly = ply
-            var back: Int? = null
-            if (answer.kind == Solver.Kind.IMPOSSIBLE) {
-                back = lastSurePly?.takeIf { it < ply && it < positions.size }?.let { ply - it }
-                if (back == null) back = withContext(solverDispatcher) { lookBack(positions) { job?.isActive != true } }
-                back?.let { lastSurePly = ply - it }
+            remember(pos, answer)
+            // QA q1-1: show "impossible" the moment it is proven; the undo-n button follows when the look-back is done
+            // (boards already proven this session -- e.g. with the hint on all along -- answer from the cache at once)
+            val looking = answer.kind == Solver.Kind.IMPOSSIBLE
+            set(s.copy(hint = Hint(answer.kind, answer.jump, ply, null, t0, clock() - t0, backRunning = looking)))
+            log("SOLVE ${answer.kind} ${answer.jump?.text()} nodes=${answer.nodes} ms=${answer.ms} failed=${answer.failed} shownAfter=${clock() - t0}")
+            if (!looking) return@launch
+            val proven = HashMap<Long, Boolean>().apply { verdicts.forEach { (k, v) -> put(k, v.kind == Solver.Kind.SURE) } }
+            val back = withContext(solverDispatcher) {
+                nearestSolvable(positions, cancelled = { job?.isActive != true }) { p -> proven[p] }
             }
             if (s.pos != pos || !s.hintOn) return@launch
-            set(s.copy(hint = Hint(answer.kind, answer.jump, ply, back, t0, clock() - t0)))
-            log("SOLVE ${answer.kind} ${answer.jump?.text()} back=$back nodes=${answer.nodes} ms=${answer.ms} failed=${answer.failed}")
+            back?.let { remember(positions[positions.size - 1 - it], Solver.Answer(Solver.Kind.SURE, null, emptyList(), 0, 0, 0)) }
+            set(s.copy(hint = s.hint?.copy(backN = back, backRunning = false)))
+            log("SOLVE back=$back after ${clock() - t0} ms")
         }
     }
 
-    /** How many jumps back the nearest solvable board is (each board gets a short budget; null if none proven). */
-    private fun lookBack(positions: List<Long>, cancelled: () -> Boolean): Int? {
-        for (n in 1 until positions.size) {
-            if (cancelled()) return null
-            val a = Solver(maxMs = BACK_BUDGET_MS).solve(positions[positions.size - 1 - n], cancelled = cancelled)
-            if (a.kind == Solver.Kind.SURE) return n
-        }
-        return null
+    /** Solver answers per board for this session (a board's verdict never changes; only proofs are kept, never UNSURE). */
+    private val verdicts = HashMap<Long, Solver.Answer>()
+
+    private fun remember(pos: Long, a: Solver.Answer) {
+        if (a.kind == Solver.Kind.UNSURE) return
+        if (verdicts.size > 4096) verdicts.clear()
+        // a SURE answer is only reused as a hint when it carries its first hop; look-back proofs carry none
+        if (a.kind == Solver.Kind.SURE && a.jump == null && verdicts[pos] != null) return
+        verdicts[pos] = a
     }
 
     // ---------------------------------------------------------------- confirm
@@ -555,7 +557,6 @@ class GameFlow(
     /** Debug `load <hex>`: a custom board (not saved, records not touched). */
     fun loadBoard(pos: Long) {
         cancelJobs()
-        lastSurePly = null
         set(PlayState(phase = Phase.IDLE, start = s.start, positions = listOf(pos), resumedAt = clock(), hintOn = s.hintOn, freezeMs = s.freezeMs, freezeAt = s.freezeAt))
         log("GAME load ${Peg.hex(pos)} left=${Peg.count(pos)}")
         if (!Peg.hasMove(pos)) finishIfOver() else refreshHint()
